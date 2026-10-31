@@ -62,7 +62,7 @@ button:focus-visible,.block:focus-visible{outline:3px solid var(--sel);outline-o
 .cell.well{background:var(--well)}
 .cell.void{background:transparent}
 .block{
-  position:absolute;inset:2px;border-radius:11px;background:var(--c);border:none;padding:0;cursor:pointer;
+  position:absolute;left:2px;top:2px;width:calc(100% - 4px);height:calc(100% - 4px);border-radius:11px;background:var(--c);border:none;padding:0;cursor:pointer;
   box-shadow:inset 0 -5px 0 rgba(0,0,0,.18),inset 0 3px 0 rgba(255,255,255,.35);
   transition:transform .12s;
 }
@@ -75,6 +75,7 @@ button:focus-visible,.block:focus-visible{outline:3px solid var(--sel);outline-o
 @keyframes shake{25%{transform:translateX(-4px)}75%{transform:translateX(4px)}}
 .funnel{width:56%;height:26px;background:var(--wall);clip-path:polygon(0 0,100% 0,58% 100%,42% 100%)}
 canvas{display:block;width:100%;max-width:440px}
+#fx{position:fixed;left:0;top:0;width:100vw;height:100vh;max-width:none;pointer-events:none;z-index:5}
 footer{padding:6px 0 16px}
 #over{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30;background:color-mix(in srgb,var(--bg2) 75%,transparent);backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
 #over.show{display:flex}
@@ -93,6 +94,7 @@ footer{padding:6px 0 16px}
 <div class="wrap" id="wrap">
   <div id="board" role="group" aria-label="Blöcke"></div>
   <canvas id="cv" aria-label="Förderband und Becher"></canvas>
+  <canvas id="fx" aria-hidden="true"></canvas>
 </div>
 <div id="over" role="dialog" aria-modal="true" aria-labelledby="ovTitle">
   <div class="card"><h2 id="ovTitle"></h2><p id="ovText"></p><button id="ovBtn"></button></div>
@@ -103,7 +105,7 @@ footer{padding:6px 0 16px}
   var NAMES=["Rot","Gelb","Grün","Blau","Lila","Rosa","Türkis","Orange","Braun","Weiß"];
   var SLOTS=30, PER=9, CUP=3, NCOL=4, COLS=6;
   var $=function(id){return document.getElementById(id)};
-  var board=$("board"), cv=$("cv"), ctx=cv.getContext("2d");
+  var board=$("board"), cv=$("cv"), ctx=cv.getContext("2d"), fx=$("fx"), fctx=fx.getContext("2d");
   var level=1;
   try{var s=parseInt(localStorage.getItem("murmelband-level"),10);if(s>0)level=s;}catch(e){}
 
@@ -130,7 +132,7 @@ footer{padding:6px 0 16px}
     for(var tries=0;tries<40;tries++){
       g=[];
       for(var y=0;y<R;y++){var row=[];for(var x=0;x<COLS;x++){
-        var v=(y===R-1&&x>0&&x<5)?false:r()<0.17;
+        var v=(y===R-1&&x>0&&x<5)?false:r()<(l<=20?0.17:Math.max(0.06,0.17-(l-20)*0.004));
         row.push({t:v?"void":"cell"});
       }g.push(row);}
       var seen={},q=[];
@@ -151,7 +153,7 @@ footer{padding:6px 0 16px}
     for(var i=0;i<blocks.length;i++)cl.push(i%nC);
     shuffle(cl,r);
     blocks.forEach(function(b,i){b.c=cl[i];});
-    for(y=0;y<R-1;y++)for(x=0;x<COLS;x++)if(g[y][x].t==="block"&&l>=3&&r()<0.2)g[y][x].hidden=true;
+    for(y=0;y<R-1;y++)for(x=0;x<COLS;x++)if(g[y][x].t==="block"&&l>=3&&r()<(l<=20?0.2:Math.min(0.45,0.2+(l-20)*0.01)))g[y][x].hidden=true;
 
     // Lösbare Reihenfolge simulieren und daraus die Becher bauen
     var sim=g.map(function(row){return row.map(function(c){return {t:c.t,c:c.c};});}), seq=[];
@@ -161,7 +163,7 @@ footer{padding:6px 0 16px}
       for(var j=0;j<PER/CUP;j++)seq.push(sim[k[0]][k[1]].c);
       sim[k[0]][k[1]]={t:"empty"};
     }
-    var w=Math.min(2+Math.floor(l/4),7);
+    var w=l<=20?Math.min(2+Math.floor(l/4),7):Math.min(7+Math.floor((l-20)/5),12);
     for(i=0;i<seq.length;i++){var jj=Math.min(seq.length-1,i+Math.floor(r()*w));var t=seq[i];seq[i]=seq[jj];seq[jj]=t;}
     var cols=[[],[],[],[]];
     seq.forEach(function(c){
@@ -177,11 +179,12 @@ footer{padding:6px 0 16px}
   var grid,cols,slots,balls,flyers,off,over,msgT=0;
   function startLevel(){
     var L=generate(level);
+    SLOTS=level<=20?30:Math.max(20,30-Math.floor((level-20)/4));
     grid=L.grid; cols=L.cols.map(function(c){return c.map(function(x){return {c:x,fill:0,res:0,clr:0};});});
     slots=new Array(SLOTS).fill(null); balls=[]; flyers=[]; off=0; over=false;
     try{localStorage.setItem("murmelband-level",String(level));}catch(e){}
     $("over").classList.remove("show"); $("lvl").textContent=level;
-    renderGrid(); fitBoard(); setStatus();
+    resize(); renderGrid(); setStatus();
   }
 
   function renderGrid(){
@@ -235,6 +238,7 @@ footer{padding:6px 0 16px}
   function readTheme(){var cs=getComputedStyle(document.documentElement);["belt","hole","cupbg","ink","muted","well","wall"].forEach(function(k){theme[k]=cs.getPropertyValue("--"+k).trim();});}
   function resize(){
     dpr=window.devicePixelRatio||1;
+    fx.width=innerWidth*dpr; fx.height=innerHeight*dpr;
     W=Math.min($("wrap").clientWidth-20,440);
     var beltH=70, by=105, cupTop=by+beltH+10, cupH=26, gap=6;
     H=cupTop+4.5*(cupH+gap);
@@ -379,10 +383,15 @@ footer{padding:6px 0 16px}
   function showOver(t,txt,btn,fn){$("ovTitle").textContent=t;$("ovText").textContent=txt;var b=$("ovBtn");b.textContent=btn;b.onclick=fn;$("over").classList.add("show");b.focus();}
 
   /* ---------- Zeichnen ---------- */
-  function marble(x,y,r,col){
-    var g=ctx.createRadialGradient(x-r*.35,y-r*.4,r*.1,x,y,r);
+  function marble(x,y,r,col,c2){
+    var C=c2||ctx, g=C.createRadialGradient(x-r*.35,y-r*.4,r*.1,x,y,r);
     g.addColorStop(0,"#fff");g.addColorStop(.25,col);g.addColorStop(1,shade(col));
-    ctx.fillStyle=g;ctx.beginPath();ctx.arc(x,y,r,0,7);ctx.fill();
+    C.fillStyle=g;C.beginPath();C.arc(x,y,r,0,7);C.fill();
+  }
+  function drawBalls(){
+    var cr=cv.getBoundingClientRect();
+    fctx.setTransform(dpr,0,0,dpr,0,0); fctx.clearRect(0,0,innerWidth,innerHeight);
+    balls.forEach(function(b){marble(cr.left+b.x,cr.top+b.y,G.mr,COLORS[b.c],fctx);});
   }
   function shade(h){var n=parseInt(h.slice(1),16);return "rgb("+((n>>16)*.6|0)+","+((n>>8&255)*.6|0)+","+((n&255)*.6|0)+")";}
   function rrect(x,y,w,h,r){ctx.beginPath();ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h);}
@@ -402,7 +411,7 @@ footer{padding:6px 0 16px}
       if(slots[i]===null){ctx.fillStyle=theme.hole;ctx.beginPath();ctx.arc(p[0],p[1],G.mr*.75,0,7);ctx.fill();}
       else marble(p[0],p[1],G.mr,COLORS[slots[i]]);
     }
-    balls.forEach(function(b){if(b.y>-G.mr)marble(b.x,b.y,G.mr,COLORS[b.c]);});
+    drawBalls();
     for(var c=0;c<NCOL;c++){
       var col=cols[c];
       for(var j=0;j<Math.min(col.length,5);j++){
